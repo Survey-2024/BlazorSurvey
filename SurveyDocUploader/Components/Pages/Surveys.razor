@@ -1,0 +1,131 @@
+﻿@page "/surveys"
+@rendermode InteractiveServer
+@using SurveyDocUploader.Models
+@using System.Net.Http
+@using System.Text.Json
+@using System.Threading.Tasks
+@using System.Text.Json.Serialization
+@inject HttpClient Client
+
+
+<h3>Surveys</h3>
+
+@if (surveys == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <Grid TItem="SurveyGridModel" class="table table-hover table-bordered table-striped"
+          AllowRowClick="true"
+          AllowSorting="true"
+          DataProvider="SurveysDataProvider"
+          HeaderRowCssClass="bg-primary text-white border-bottom-0"
+          Responsive="true"
+          AllowPaging="true"
+          AllowFiltering="true"
+          PageSize="10"
+          ItemsPerPageText="Number of Surveys to View"
+          PaginationItemsTextFormat="{0} - {1} of {2} Surveys"
+          PageSizeSelectorVisible="true"
+          PageSizeSelectorItems="@(new int[] { 5,10,20 })"
+          OnRowClick="OnRowClick">
+        <GridColumn TItem="SurveyGridModel" HeaderText="Id" PropertyName="SurveyId" SortKeySelector="item => item.SurveyId" IsDefaultSortColumn SortDirection="SortDirection.Descending">
+             @context.SurveyId
+        </GridColumn>
+        <GridColumn TItem="SurveyGridModel" HeaderText="Type" PropertyName="SurveyOrigin" SortKeySelector="item => item.SurveyOrigin">
+            @context.SurveyOrigin
+        </GridColumn>
+        <GridColumn TItem="SurveyGridModel" HeaderText="Status" PropertyName="SurveyStatus" SortKeySelector="item => item.SurveyStatus">
+            @context.SurveyStatus
+        </GridColumn>
+        <GridColumn TItem="SurveyGridModel" HeaderText="Created Date" PropertyName="CreatedDate" SortKeySelector="item => item.CreatedDate">
+            @* @context.CreatedDate.ToLocalTime().ToString("yyyy-MM-dd hh:mm tt") only works in localhost *@
+            @context.CreatedDate.ToString("yyyy-MM-dd hh:mm tt")
+        </GridColumn>
+    </Grid>
+}
+
+<Modal @ref="modal">
+    <BodyTemplate>
+        Modal body text goes here.
+    </BodyTemplate>
+    <FooterTemplate>
+        <Button Color="ButtonColor.Secondary" @onclick="OnHideModalClick">Close</Button>
+    </FooterTemplate>
+</Modal>
+
+
+@code {
+    [Inject] ModalService ModalService { get; set; } = default!;
+
+    private IEnumerable<Survey> surveys = default!;
+    private List<SurveyGridModel> surveyGridModels = new();
+    private Modal modal = default!;
+    private Survey currentSurvey = null!;
+    private SurveyAnswerModel surveyAnswerModel = new();
+
+    private async Task OnShowModalClick()
+    {
+        await modal.ShowAsync();
+    }
+
+    private async Task OnHideModalClick()
+    {
+        await modal.HideAsync();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var requestUriSurveys = "https://surveyapicjd.azurewebsites.net/api/surveys";
+
+        // I don't know why this is needed. Honestly.
+        var options = new JsonSerializerOptions()
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                PropertyNameCaseInsensitive = true
+            };
+
+
+        surveys = await Client.GetFromJsonAsync<List<Survey>>(requestUriSurveys, options) ?? new List<Survey>();
+
+        foreach (var survey in surveys)
+        {
+            surveyGridModels.Add(new SurveyGridModel
+                {
+                    SurveyId = survey.SurveyId,
+                    SurveyOrigin = survey.SurveyType.Origin,
+                    SurveyStatus = survey.SurveyStatus.SurveyStatus1,
+                    CreatedDate = survey.CreatedDate
+                });
+        }
+
+        await base.OnInitializedAsync();
+    }
+
+    private async Task<GridDataProviderResult<SurveyGridModel>> SurveysDataProvider(GridDataProviderRequest<SurveyGridModel> request)
+    {
+        return await Task.FromResult(request.ApplyTo(surveyGridModels));
+    }
+
+    private async Task OnRowClick(GridRowEventArgs<SurveyGridModel> args)
+    {
+        int surveyId = args.Item.SurveyId;
+
+        var requestUri = $"https://surveyapicjd.azurewebsites.net/api/Surveys/{surveyId}";
+
+        var options = new JsonSerializerOptions()
+            {
+                ReferenceHandler = ReferenceHandler.Preserve,
+                PropertyNameCaseInsensitive = true
+            };
+
+        currentSurvey = await Client.GetFromJsonAsync<Survey>(requestUri, options) ?? new Survey();
+
+        surveyAnswerModel.Answers = currentSurvey.SurveyAnswers.ToList();
+
+        var parameters = new Dictionary<string, object>();
+        parameters.Add("Answers", surveyAnswerModel.Answers);
+        await modal.ShowAsync<SurveyAnswersComponent>(title: $"Survey {surveyId} Details", parameters: parameters);
+    }
+}

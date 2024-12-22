@@ -1,0 +1,25 @@
+﻿@using Models
+
+@foreach (var answer in Answers)
+{
+    <div class="row">
+        <div class="col"><p><strong>@answer.SurveyQuestion.QuestionText</strong></p></div>
+    </div>
+    <div class="row">
+        @if (!string.IsNullOrEmpty(answer.AnswerText))
+        {
+            <div class="col">@answer.AnswerText</div>
+        }
+        else
+        {
+            <div class="col"><em>&lt;question not answered&gt;</em></div>
+        }
+    </div>
+    <br />
+}
+
+@code {
+
+    [Parameter] public List<SurveyAnswer> Answers { get; set; } = null!;
+
+}

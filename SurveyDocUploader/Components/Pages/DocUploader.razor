@@ -1,0 +1,120 @@
+﻿@page "/"
+@page "/docuploader"
+@rendermode InteractiveServer
+@inject Services.IBlobService _blobService
+@inject Services.IServiceBusService _serviceBusService
+@inject Services.IToastService _toastService
+@inject IJSRuntime JS
+@using Azure.Messaging.ServiceBus
+@using SurveyDocUploader.Models.Dtos
+@using System.Text
+
+<h3>Upload Your Document</h3>
+
+<Toasts class="p-3" Messages="_toastService.Messages" AutoHide="true" Delay="4000" Placement="ToastsPlacement.TopRight" />
+
+<div class="row">
+    <div class="col-md-6">
+        <form @formname="fileForm" class="align-items-center mt-2" method="post" enctype="multipart/form-data">
+            <AntiforgeryToken />
+            <label for="uploadfile" class="btn btn-sm btn-primary mb-0">
+                ⭱ Select a Survey (pdf)
+                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                <InputFile OnChange="@LoadFiles" id="uploadfile" accepts=".pdf" />
+            </label>
+        </form>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-info flex-grow-1 flex-md-grow-0 mt-2 mt-md-0">
+            <div class="card-header">Templates</div>
+            <div class="card-body text-info">
+                <p class="card-title">Domestic Survey:</p>
+                <p class="card-text"></p>
+                <button @onclick="DownloadDomesticSurvey" class="btn btn-primary btn-sm">⭳ Download Domestic Survey Template</button>
+            </div>
+            <div class="card-body text-info">
+                <p class="card-title">Foreign Survey:</p>
+                <p class="card-text"></p>
+                <button @onclick="DownloadForeignSurvey" class="btn btn-primary btn-sm">⭳ Download Foreign Survey Template</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+
+    private IJSObjectReference? _module;
+
+    protected override void OnInitialized()
+    {
+        _serviceBusService.MessageEventCallback += () => InvokeAsync(StateHasChanged);
+
+        base.OnInitialized();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await _serviceBusService.StartPollServiceBus();
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./scripts/script.js");
+        }
+
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    private async void DownloadDomesticSurvey()
+    {
+        Console.WriteLine("In Download Docmestic Survey");
+        await DownloadFile("Template Survey Domestic.pdf");
+    }
+
+    private async void DownloadForeignSurvey()
+    {
+        Console.WriteLine("In Download Foreign Survey");
+        await DownloadFile("Template Survey Foreign.pdf");
+    }
+
+    private async Task DownloadFile(string fileName)
+    {
+        ContentDto result = await _blobService.GetBlobFile(fileName);
+
+        if (_module != null)
+        {
+            await _module.InvokeVoidAsync("download", new
+            {
+                ByteArray = ConvertStreamToByteArray(result.Content!),
+                FileName = result.Name,
+                ContentType = result.ContentType
+            });
+        }
+    }
+
+    private static byte[] ConvertStreamToByteArray(Stream stream)
+    {
+        using (var memoryStream = new MemoryStream())
+        {
+            stream.CopyTo(memoryStream);
+            return memoryStream.ToArray();
+        }
+    }
+
+    private async Task LoadFiles(InputFileChangeEventArgs e)
+    {
+        Console.WriteLine(e.File.Name);
+
+        await _blobService.UploadBlobFile(e.File);
+
+        await _toastService.NewToastMessage(ToastType.Info, $"Uploading and Processing {e.File.Name}");
+    }
+
+    private async Task SendMyToast(MouseEventArgs e)
+    {
+        await _toastService.NewToastMessage(ToastType.Info, "hello");
+    }
+
+    private async Task StopPolling(MouseEventArgs e)
+    {
+        await _serviceBusService.StopPollServiceBus();
+    }
+}
